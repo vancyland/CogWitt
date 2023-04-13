@@ -1,0 +1,50 @@
+import torch
+import torch.nn as nn
+
+class MgTextCNN(nn.Module):
+   def __init__(self, vocab_len, embedding_size=100, max_len=10, num_grids=3, num_channels=2):
+        super().__init__()
+
+    # 词典大小，embedding维度
+        self.embedding = nn.Embedding(vocab_len, embedding_size)
+
+    # 初始化多重网格卷积层
+        self.convs = nn.ModuleList([
+                  nn.Conv2d(in_channels=1,
+                  out_channels=num_channels,
+                  kernel_size=(i, embedding_size))
+                 for i in range(3, 3 + num_grids)])
+
+    # 初始化多重网格最大池化层
+        self.max_pools = nn.ModuleList([
+        nn.MaxPool1d(kernel_size=max_len - i + 1)
+        for i in range(3, 3 + num_grids)
+    ])
+
+    # 全连接层
+        self.dense = nn.Linear(num_channels * num_grids, 1)
+        self.drop_out = nn.Dropout(0.2)
+
+   def forward(self, x):
+    # [batch_size, seq_len, embedding_size]
+        embedding = self.embedding(x)
+
+    # 加一个维度 [batch_size, 1, seq_len, embedding_size]
+        embedding = embedding.unsqueeze(1)
+
+    # 应用多重网格卷积层和最大池化层
+        outs = []
+        for conv, max_pool in zip(self.convs, self.max_pools):
+            out = conv(embedding).squeeze(-1)
+            out = max_pool(out)
+            outs.append(out)
+
+    # 拼接输出
+        out = torch.cat(outs, dim=1).squeeze(-1)
+
+    # 应用全连接层
+        out = self.drop_out(out)
+        out = self.dense(out)
+        out = torch.sigmoid(out).squeeze(-1)
+
+        return out
